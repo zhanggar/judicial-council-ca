@@ -1,0 +1,112 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Libraries
+```{r}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(janitor)
+library(magrittr)
+```
+
+
+0. Load the assessment and booking csv files into the R environment.  
+```{r}
+setwd("C:/Users/garyz/OneDrive/Gary/Employment/Job documents/Judicial Council of CA/")
+a <- read.csv("JO#5477 - Assessments Table for Interview.csv")
+b <- read.csv("JO#5477 - Bookings Table for Interview.csv")
+View(a)
+View(b)
+```
+
+
+1. Currently, the assessment data is long with each row not unique to each assessed booking. Make the data wide such that no data is lost but each row now represents one assessed booking.  
+
+```{r}
+table(a$book_num)
+# reshape the data from long to wide
+a_wide <- a %>% pivot_wider(id_cols = c("book_num", "assessment_date", "release_recommendation", "release_decision", "psa_fta_risk_score", "psa_nca_risk_score", "psa_nvca_risk_score", "psa_score", "monitor_level"), names_from = psa_tool_question, values_from = psa_tool_response)
+View(a_wide)
+table(a_wide$book_num)
+
+```
+
+
+2a. Which variable will allow you to join these two data frames? 
+2b. Currently, they are unable to be exact-matched. Modify one of the data frames so that you may join the data based on this variable. 
+```{r}
+## convert book_num from char to num
+str(a_wide$book_num)
+a_wide <- a_wide %>% mutate(book_num = as.numeric(substr(book_num, 2, 9)))
+View(a_wide)
+str(a_wide$book_num)
+```
+
+
+3. Join the data so that you include all the bookings but only the assessments which match to the bookings.
+```{r}
+# left join b with a_wide
+ba <- left_join(b, a_wide, by="book_num")
+View(ba)
+
+```
+
+
+4. How many booked assessment were unable to be matched to the bookings?
+```{r}
+View(ba)
+library(janitor)
+sum(is.na(ba$assessment_date))
+sum(is.na(ba$psa_nca_risk_score))
+# 65 assessments that were not matched to the bookings
+```
+
+
+5. In the joined dataset, how many felony bookings are there at each score of the PSA NCA Risk Score?     
+```{r}
+ba <- ba %>% filter(!is.na(psa_nca_risk_score))
+tabyl(ba, psa_nca_risk_score, arrest_charge_level) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("col") %>% 
+  adorn_pct_formatting() %>% 
+  adorn_ns()
+
+```
+
+
+6. Create a density curve of the above distribution, as well as one of misdemeanors bookings so that they may be visually compared.  
+```{r}
+# filter
+ba_filter <- ba %>% filter((arrest_charge_level == "F" | arrest_charge_level == "M"))
+
+tabyl(ba_filter, psa_nca_risk_score, arrest_charge_level) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("col") %>% 
+  adorn_pct_formatting() %>% 
+  adorn_ns()
+
+# Basic density
+p <- ggplot(ba_filter, aes(x=psa_nca_risk_score, color=arrest_charge_level)) + 
+  geom_density()
+p
+```
+
+
+7a. What is the difference in mean PSA NCA Risk Scores between felony and misdemeanor bookings? 
+7b. Are these differences statistically significant? 
+7c. What can you conclude from the results of your statistical test? 
+```{r}
+# mean risk scores
+library(dplyr)
+ba_filter %>% 
+  group_by(arrest_charge_level) %>% 
+  summarise_at(vars(psa_nca_risk_score), list(mean_psa_risk_score = mean))
+
+# significance test for whether the mean psa nca risk score is significantly different between felony and misdemeanor booking groups 
+t.test(psa_nca_risk_score ~ arrest_charge_level, ba_filter, var.equal = TRUE, paired = FALSE, conf.level = 0.95)
+
+```
+
